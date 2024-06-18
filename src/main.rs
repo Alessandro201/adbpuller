@@ -24,12 +24,16 @@ struct Sources {
     sources: Vec<UnixPathBuf>,
 
     /// Add /sdcard/DCIM and /sdcard/Pictures to the sources
-    #[arg(short, long = "copy-media")]
+    #[arg(short = 'm', long = "copy-media")]
     media_preset: bool,
 
     /// Add Whatsapp Audio, Images, Video and Voice Notes to the sources
-    #[arg(short, long = "copy-whatsapp")]
+    #[arg(short = 'w', long = "copy-whatsapp")]
     whatsapp_preset: bool,
+
+    /// Add Whatsapp Backup and Databases folders to the sources
+    #[arg(short = 'b', long = "copy-whatsapp-backups")]
+    whatsapp_backups_preset: bool,
 }
 
 /// Pull files from android using ADB drivers
@@ -37,7 +41,7 @@ struct Sources {
 #[command(version, about)]
 #[command(long_about = "Pull files from android using ADB drivers
 
-Example: 
+Example:
     ./adb_puller.exe -s /sdcard/DCIM")]
 struct Cli {
     #[command(flatten)]
@@ -83,35 +87,15 @@ impl Cli {
             ])
         }
 
+        if self.source.whatsapp_backups_preset {
+            sources.extend([
+                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Backups"),
+                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Databases"),
+            ])
+        }
+
         self.source.sources.extend(sources);
     }
-
-    // fn check_sources(&mut self) {
-    //     self.source = Some(self.source.clone().unwrap_or_default());
-    //     let source = self.source.as_mut().unwrap();
-    //
-    //     if self.media_preset {
-    //         source.extend([UnixPathBuf::from("/sdcard/DCIM"), UnixPathBuf::from("/sdcard/Pictures")])
-    //     }
-    //     if self.whatsapp_preset {
-    //         source.extend([
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio"),
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images"),
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video"),
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes"),
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video Notes"),
-    //             UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents"),
-    //         ])
-    //     }
-    //
-    //     if source.is_empty() {
-    //         println!(
-    //             "{} You need to insert at least a source. For more information type --help\n",
-    //             "error:".red().bold()
-    //         );
-    //         exit(1);
-    //     };
-    // }
 }
 
 fn get_files_from_adb(adb_path: &BasePathBuf, root_path: &UnixPathBuf) -> Vec<UnixPathBuf> {
@@ -316,20 +300,24 @@ fn build_destination_files(file_list: &[UnixPathBuf], root_dest: &Path, root_src
         };
 
         let dest = root_dest.join(file_rel_to_src.as_unix_str().to_str().unwrap());
-        let dest = match dest.normalize_virtually() {
-            Ok(p) => p,
-            Err(err) => {
-                println!("Unable to normalize destination path: {:?} due to error: {err}", dest);
-                continue;
-            }
-        };
+
+        #[cfg(target_os = "windows")]
+        {
+            let dest = match dest.normalize_virtually() {
+                Ok(p) => p,
+                Err(err) => {
+                    println!("Unable to normalize destination path: {:?} due to error: {err}", dest);
+                    continue;
+                }
+            };
+        }
 
         if dest.exists() && !force {
             continue;
         }
 
         files.src_files.push(file.to_owned());
-        files.dest_files.push(dest);
+        files.dest_files.push(BasePathBuf::new(dest).unwrap());
     }
 
     files
@@ -379,9 +367,10 @@ fn main() {
         if user_input.trim().to_lowercase() == "y" {
             for (src_file, dest_file) in files.into_iter() {
                 println!(
-                    "{}  ->  {}",
+                    "{}  {}  {}",
                     src_file.to_str().unwrap().green(),
-                    dest_file.as_path().to_str().unwrap().blue()
+                    "->".cyan(),
+                    dest_file.as_path().to_str().unwrap()
                 );
             }
         }
