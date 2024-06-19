@@ -1,11 +1,13 @@
+use anyhow::{anyhow, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashSet;
 use std::fs::{read_to_string, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::process::exit;
 use std::time::Duration;
+
+use std::{env, process};
 use unix_path::{Path as UnixPath, PathBuf as UnixPathBuf};
 
 use which::which;
@@ -98,7 +100,7 @@ impl Cli {
     }
 }
 
-fn get_files_from_adb(adb_path: &BasePathBuf, root_path: &UnixPathBuf) -> Vec<UnixPathBuf> {
+fn get_files_from_adb(adb_path: &PathBuf, root_path: &UnixPathBuf) -> Vec<UnixPathBuf> {
     let mut file_list: Vec<UnixPathBuf> = Vec::new();
 
     let mut cmd = process::Command::new(adb_path);
@@ -188,16 +190,16 @@ impl Iterator for SrcDestFilesIntoIterator {
     type Item = (UnixPathBuf, BasePathBuf);
 
     fn next(&mut self) -> Option<(UnixPathBuf, BasePathBuf)> {
-        let result_src = match self.files.src_files.get(self.index) {
+        let src_path = match self.files.src_files.get(self.index) {
             Some(path) => path.clone(),
             None => return None,
         };
-        let result_dest = match self.files.dest_files.get(self.index) {
+        let dest_path = match self.files.dest_files.get(self.index) {
             Some(path) => path.clone(),
             None => return None,
         };
         self.index += 1;
-        Some((result_src, result_dest))
+        Some((src_path, dest_path))
     }
 }
 
@@ -213,7 +215,7 @@ fn get_files_to_skip(skip: &Option<Vec<PathBuf>>) -> HashSet<String> {
     hs
 }
 
-fn connected_to_adb_server(adb_path: &BasePathBuf, retries: Option<usize>) -> bool {
+fn connected_to_adb_server(adb_path: &PathBuf, retries: Option<usize>) -> bool {
     let retries = retries.unwrap_or(1);
 
     let output = match process::Command::new(adb_path).arg("devices").stdout(process::Stdio::piped()).output() {
@@ -241,33 +243,40 @@ fn connected_to_adb_server(adb_path: &BasePathBuf, retries: Option<usize>) -> bo
     }
 }
 
-fn get_adb_path() -> Result<normpath::BasePathBuf, String> {
-    let adb_file_path = if cfg!(windows) {
-        PathBuf::from(".\\lib\\platform-tools-windows\\adb.exe")
+fn get_adb_path() -> Result<PathBuf> {
+    let adb_name = if cfg!(windows) {
+        "adb.exe"
     } else if cfg!(unix) {
-        PathBuf::from("./lib/platform-tools-linux/adb")
+        "adb"
     } else {
-        return Err("OS is not supported".to_string());
+        return Err(anyhow!("OS is not supported"));
     };
 
-    std::env::current_exe()
-        .unwrap()
+    let adb_path = env::current_exe()
+        .context("Failed to get path of the adbpuller executable")?
         .parent()
-        .unwrap()
-        .join(adb_file_path)
-        .normalize()
-        .or_else(|_| {
-            println!("Unable to find adb in the lib folder");
-            if let Ok(path) = which("adb").expect("Unable to find adb.").normalize() {
-                println!("Using adb from $PATH");
-                Ok(path)
-            } else {
-                Err("adb is not installed in the system. Download it and add it to $PATH".to_string())
-            }
-        })
+        .context("Unable to get the parent folder of the adbpuller executable")?
+        .join(adb_name);
+
+    if adb_path.exists() {
+        Ok(adb_path)
+    } else {
+        which("adb").context("Unable to find adb drivers. Download and add them to $PATH")
+    }
+
+    // adb_path.normalize().or_else(|_| {
+    //     println!("Unable to find adb in the .");
+    //
+    //     if let Ok(path) = which("adb").expect("Unable to find adb.").normalize() {
+    //         println!("Using adb from $PATH");
+    //         Ok(path)
+    //     } else {
+    //         Err(anyhow!("adb is not installed in the system. Download it and add it to $PATH"))
+    //     }
+    // })
 }
 
-fn build_file_list(adb_path: &BasePathBuf, args: &Cli) -> SrcDestFiles {
+fn build_file_list(adb_path: &PathBuf, args: &Cli) -> SrcDestFiles {
     let files_to_skip = get_files_to_skip(&args.skip);
     let mut files = SrcDestFiles::new();
 
@@ -332,7 +341,10 @@ fn main() {
     };
 
     let adb_path = match get_adb_path() {
-        Ok(path) => path,
+        Ok(path) => {
+            println!("Using adb from: {path:?}");
+            path
+        }
         Err(err) => {
             eprintln!("{}", err);
             exit(1)
