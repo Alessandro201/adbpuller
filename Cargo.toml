@@ -1,5 +1,5 @@
 [package]
-name = "AdbPuller"
+name = "adbpuller"
 version = "1.0.0"
 edition = "2021"
 authors = ["github.com/Alessandro201"]
