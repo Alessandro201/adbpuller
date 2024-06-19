@@ -310,16 +310,16 @@ fn build_destination_files(file_list: &[UnixPathBuf], root_dest: &Path, root_src
 
         let dest = root_dest.join(file_rel_to_src.as_unix_str().to_str().unwrap());
 
-        #[cfg(target_os = "windows")]
-        {
-            let dest = match dest.normalize_virtually() {
-                Ok(p) => p,
-                Err(err) => {
-                    println!("Unable to normalize destination path: {:?} due to error: {err}", dest);
-                    continue;
-                }
-            };
-        }
+        // #[cfg(target_os = "windows")]
+        // {
+        //     let dest = match dest.normalize_virtually() {
+        //         Ok(p) => p,
+        //         Err(err) => {
+        //             println!("Unable to normalize destination path: {:?} due to error: {err}", dest);
+        //             continue;
+        //         }
+        //     };
+        // }
 
         if dest.exists() && !force {
             continue;
