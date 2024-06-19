@@ -19,3 +19,9 @@ sys = "0.0.1"
 unix_path = "1.0.1"
 unix_str = "1.0.0"
 which = "6.0.0"
+
+[profile.release]
+opt-level = 'z'   # Optimize for size
+lto = true        # Enable link-time optimization
+codegen-units = 1 # Reduce number of codegen units to increase optimizations
+# strip = true      # Strip symbols from binary*

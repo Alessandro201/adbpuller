@@ -16,7 +16,6 @@ use clap::{ArgAction, Args, Parser};
 use colored::Colorize;
 
 use normpath::BasePathBuf;
-use normpath::PathExt;
 
 #[derive(Args, Debug)]
 #[group(required = true, multiple = true)]
@@ -263,17 +262,6 @@ fn get_adb_path() -> Result<PathBuf> {
     } else {
         which("adb").context("Unable to find adb drivers. Download and add them to $PATH")
     }
-
-    // adb_path.normalize().or_else(|_| {
-    //     println!("Unable to find adb in the .");
-    //
-    //     if let Ok(path) = which("adb").expect("Unable to find adb.").normalize() {
-    //         println!("Using adb from $PATH");
-    //         Ok(path)
-    //     } else {
-    //         Err(anyhow!("adb is not installed in the system. Download it and add it to $PATH"))
-    //     }
-    // })
 }
 
 fn build_file_list(adb_path: &PathBuf, args: &Cli) -> SrcDestFiles {
@@ -309,17 +297,6 @@ fn build_destination_files(file_list: &[UnixPathBuf], root_dest: &Path, root_src
         };
 
         let dest = root_dest.join(file_rel_to_src.as_unix_str().to_str().unwrap());
-
-        // #[cfg(target_os = "windows")]
-        // {
-        //     let dest = match dest.normalize_virtually() {
-        //         Ok(p) => p,
-        //         Err(err) => {
-        //             println!("Unable to normalize destination path: {:?} due to error: {err}", dest);
-        //             continue;
-        //         }
-        //     };
-        // }
 
         if dest.exists() && !force {
             continue;
