@@ -1,3 +1,7 @@
 /target
 /test
 /.idea
+/Release
+/adbpuller
+/adbpuller.exe
+/files_done.txt
