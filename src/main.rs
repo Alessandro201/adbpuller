@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use clap::builder::styling;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashSet;
 use std::fs::{read_to_string, OpenOptions};
@@ -12,7 +13,7 @@ use std::vec::IntoIter;
 use std::{env, process};
 use unix_path::{Path as UnixPath, PathBuf as UnixPathBuf};
 
-use regex::Regex;
+use regex::RegexSet;
 use which::which;
 
 use clap::{ArgAction, Args, Parser};
@@ -20,32 +21,17 @@ use colored::Colorize;
 
 use normpath::BasePathBuf;
 
-#[derive(Args, Debug)]
-#[group(required = true, multiple = true)]
-struct Sources {
-    /// The folder(s) or item(s) to copy
-    #[arg(short, long, num_args = 0..,)]
-    sources: Vec<UnixPathBuf>,
-
-    /// Add /sdcard/DCIM and /sdcard/Pictures to the sources
-    #[arg(short = 'm', long = "copy-media")]
-    media_preset: bool,
-
-    /// Add Whatsapp Audio, Images, Video and Voice Notes to the sources
-    #[arg(short = 'w', long = "copy-whatsapp")]
-    whatsapp_preset: bool,
-
-    /// Add Whatsapp Backup and Databases folders to the sources
-    #[arg(short = 'b', long = "copy-whatsapp-backups")]
-    whatsapp_backups_preset: bool,
-}
+const STYLES: styling::Styles = styling::Styles::styled()
+    .header(styling::AnsiColor::Green.on_default().bold())
+    .usage(styling::AnsiColor::Green.on_default().bold())
+    .literal(styling::AnsiColor::Blue.on_default().bold())
+    .placeholder(styling::AnsiColor::Cyan.on_default());
 
 /// Pull files from android using ADB drivers
 #[derive(Parser, Debug)]
+#[command(name = "adbpuller")]
 #[command(version, about)]
-
-// To add examples
-// #[command(long_about = "Pull files from android using ADB drivers")]
+#[command(styles=STYLES)]
 struct Cli {
     #[command(flatten)]
     source: Sources,
@@ -77,6 +63,26 @@ struct Cli {
     /// Don't copy metadata such as last modification date ecc..
     #[arg(long = "no-metadata", action = ArgAction::SetTrue)]
     no_metadata: bool,
+}
+
+#[derive(Args, Debug)]
+#[command(version, about, long_about = None)]
+struct Sources {
+    /// The folder(s) or item(s) to copy
+    #[arg(short, long, num_args = 0..,)]
+    sources: Vec<UnixPathBuf>,
+
+    /// Add /sdcard/DCIM and /sdcard/Pictures to the sources
+    #[arg(short = 'm', long = "copy-media")]
+    media_preset: bool,
+
+    /// Add Whatsapp Audio, Images, Video and Voice Notes to the sources
+    #[arg(short = 'w', long = "copy-whatsapp")]
+    whatsapp_preset: bool,
+
+    /// Add Whatsapp Backup and Databases folders to the sources
+    #[arg(short = 'b', long = "copy-whatsapp-backups")]
+    whatsapp_backups_preset: bool,
 }
 
 impl Cli {
@@ -251,35 +257,33 @@ fn get_adb_path() -> Result<PathBuf> {
 }
 
 fn build_file_list(adb_path: &PathBuf, args: &Cli) -> Result<SrcDestFiles> {
-    let to_skip = get_files_to_skip(&args.skip);
-    let regex_to_skip: Vec<Regex> = args
-        .exclude
-        .clone()
-        .unwrap_or_default()
-        .iter()
-        .map(|pattern| Regex::new(pattern).unwrap())
-        .collect();
-    let regex_to_keep: Vec<Regex> = args
-        .include
-        .clone()
-        .unwrap_or_default()
-        .iter()
-        .map(|pattern| Regex::new(pattern).unwrap())
-        .collect();
+    let file_to_skip = get_files_to_skip(&args.skip);
+    let regex_to_skip = if let Some(patterns_to_skip) = args.exclude.as_ref() {
+        let patterns_to_skip: Vec<&str> = patterns_to_skip.iter().map(|s| s.as_ref()).collect();
+        RegexSet::new(patterns_to_skip).context("The exclude patterns are not correct")?
+    } else {
+        RegexSet::empty()
+    };
+    let regex_to_keep = if let Some(patterns_to_keep) = args.include.as_ref() {
+        let patterns_to_keep: Vec<&str> = patterns_to_keep.iter().map(|s| s.as_ref()).collect();
+        RegexSet::new(patterns_to_keep).context("The include patterns are not correct")?
+    } else {
+        RegexSet::empty()
+    };
+
     let mut files = SrcDestFiles::new();
 
     for src in args.source.sources.iter() {
         let mut files_in_src = get_files_from_adb(adb_path, src)?;
         eprintln!("{:7} files found in {:?}", files_in_src.len(), &src);
-        files_in_src.retain(|x| !to_skip.contains(x.to_str().unwrap()));
-        files_in_src.retain(|x| {
-            let file = x.to_str().unwrap();
-            regex_to_keep.iter().any(|pattern| pattern.is_match(file))
-        });
-        files_in_src.retain(|x| {
-            let file = x.to_str().unwrap();
-            !(regex_to_skip.iter().any(|pattern| pattern.is_match(file)))
-        });
+
+        files_in_src.retain(|file| !file_to_skip.contains(file.to_str().unwrap()));
+        if !regex_to_keep.is_empty() {
+            files_in_src.retain(|file| regex_to_keep.is_match(file.to_str().unwrap()));
+        }
+        if !regex_to_skip.is_empty() {
+            files_in_src.retain(|file| !regex_to_skip.is_match(file.to_str().unwrap()));
+        }
 
         let temp_files = build_destination_files(&files_in_src, args.dest.as_path(), src, args.force)?;
         eprintln!("{:7} to copy", temp_files.len());
@@ -341,7 +345,6 @@ fn main() -> Result<()> {
     }
 
     eprintln!("Building file list, it may take some time...");
-
     let files = build_file_list(&adb_path, &args)?;
 
     if args.source.sources.len() > 1 {
