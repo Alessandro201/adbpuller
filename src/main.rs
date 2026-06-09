@@ -90,17 +90,32 @@ impl Cli {
         let mut sources: Vec<UnixPathBuf> = Vec::new();
 
         if self.source.media_preset {
-            sources.extend([UnixPathBuf::from("/sdcard/DCIM"), UnixPathBuf::from("/sdcard/Pictures")])
+            sources.extend([
+                UnixPathBuf::from("/sdcard/DCIM"),
+                UnixPathBuf::from("/sdcard/Pictures"),
+            ])
         }
 
         if self.source.whatsapp_preset {
             sources.extend([
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio"),
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images"),
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video"),
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes"),
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video Notes"),
-                UnixPathBuf::from("/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents"),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio",
+                ),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
+                ),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video",
+                ),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes",
+                ),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video Notes",
+                ),
+                UnixPathBuf::from(
+                    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents",
+                ),
             ])
         }
 
@@ -188,7 +203,10 @@ impl SrcDestFiles {
     }
 
     fn into_iter(self) -> Zip<IntoIter<UnixPathBuf>, IntoIter<BasePathBuf>> {
-        self.src_files.into_iter().zip(self.dest_files.into_iter()).into_iter()
+        self.src_files
+            .into_iter()
+            .zip(self.dest_files.into_iter())
+            .into_iter()
     }
 }
 
@@ -199,7 +217,11 @@ fn get_files_to_skip(files_with_paths_to_skip: &Option<Vec<PathBuf>>) -> HashSet
     }
     let files_with_paths_to_skip = files_with_paths_to_skip.as_ref().unwrap();
     for path in files_with_paths_to_skip {
-        for line in read_to_string(path).unwrap_or_default().lines().map(String::from) {
+        for line in read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+        {
             hs.insert(line);
         }
     }
@@ -209,7 +231,11 @@ fn get_files_to_skip(files_with_paths_to_skip: &Option<Vec<PathBuf>>) -> HashSet
 fn connected_to_adb_server(adb_path: &PathBuf, retries: Option<usize>) -> bool {
     let retries = retries.unwrap_or(1);
 
-    let output = match process::Command::new(adb_path).arg("devices").stdout(process::Stdio::piped()).output() {
+    let output = match process::Command::new(adb_path)
+        .arg("devices")
+        .stdout(process::Stdio::piped())
+        .output()
+    {
         Ok(output) => output,
         Err(_) => {
             eprintln!(
@@ -285,7 +311,8 @@ fn build_file_list(adb_path: &PathBuf, args: &Cli) -> Result<SrcDestFiles> {
             files_in_src.retain(|file| !regex_to_skip.is_match(file.to_str().unwrap()));
         }
 
-        let temp_files = build_destination_files(&files_in_src, args.dest.as_path(), src, args.force)?;
+        let temp_files =
+            build_destination_files(&files_in_src, args.dest.as_path(), src, args.force)?;
         eprintln!("{:7} to copy", temp_files.len());
 
         files.extend_from(temp_files)
@@ -293,7 +320,12 @@ fn build_file_list(adb_path: &PathBuf, args: &Cli) -> Result<SrcDestFiles> {
     Ok(files)
 }
 
-fn build_destination_files(file_list: &[UnixPathBuf], root_dest: &Path, root_src: &UnixPathBuf, force: bool) -> Result<SrcDestFiles> {
+fn build_destination_files(
+    file_list: &[UnixPathBuf],
+    root_dest: &Path,
+    root_src: &UnixPathBuf,
+    force: bool,
+) -> Result<SrcDestFiles> {
     let mut files = SrcDestFiles::new();
 
     for file in file_list.iter() {
@@ -340,7 +372,10 @@ fn main() -> Result<()> {
 
     eprintln!("Checking if a device is attached to adb server..");
     if !connected_to_adb_server(&adb_path, None) {
-        eprintln!("No device found. Try executing \"{} devices\"", adb_path.as_path().to_str().unwrap());
+        eprintln!(
+            "No device found. Try executing \"{} devices\"",
+            adb_path.as_path().to_str().unwrap()
+        );
         exit(1);
     }
 
@@ -410,6 +445,7 @@ fn main() -> Result<()> {
             .arg(src_file.to_str().unwrap())
             .arg(dest_file.as_path().to_str().unwrap())
             .stdout(process::Stdio::null())
+            .stderr(process::Stdio::null())
             .status()
             .context("Failed to start process to pull files using adb")?;
 
@@ -432,10 +468,18 @@ fn main() -> Result<()> {
     );
 
     if !files_failed.is_empty() {
-        eprintln!("Failed to copy {} files. Failed files written to {:?}", files_failed.len(), failed_path);
+        eprintln!(
+            "Failed to copy {} files. Failed files written to {:?}",
+            files_failed.len(),
+            failed_path
+        );
     }
 
-    let mut file = OpenOptions::new().append(true).create(true).open(success_path.as_path()).unwrap();
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(success_path.as_path())
+        .unwrap();
 
     for path in files_done {
         if let Err(e) = writeln!(file, "{}", path.as_path().to_str().unwrap()) {
@@ -444,7 +488,11 @@ fn main() -> Result<()> {
     }
 
     if !files_failed.is_empty() {
-        let mut file = OpenOptions::new().append(true).create(true).open(failed_path.as_path()).unwrap();
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(failed_path.as_path())
+            .unwrap();
 
         for path in files_failed {
             if let Err(e) = writeln!(file, "{}", path.as_path().to_str().unwrap()) {
